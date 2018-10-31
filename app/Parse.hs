@@ -178,10 +178,7 @@ parseTodo path lineNum = do
 
     prefixParserForFileType :: Text -> Parser Text
     -- [Note:org-mode specific parsing]
-    prefixParserForFileType "org" = try (symbol "****")
-                                    <|> try (symbol "***")
-                                    <|> try (symbol "**")
-                                    <|> try (symbol "*")
+    prefixParserForFileType "org" = try (T.concat <$> (some "*" <* space))
                                     <|> symbol "-"
     prefixParserForFileType extension = symbol . getCommentForFileType $ extension
 
