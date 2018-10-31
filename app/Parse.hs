@@ -20,21 +20,6 @@ type Parser = Parsec Void Text
 symbol :: Text -> Parser Text
 symbol = L.symbol space
 
-parseComment :: Text -> Parser TodoEntry
-parseComment extension = do
-    _ <- manyTill anyChar (symbol $ getCommentForFileType extension)
-    b <- many anyChar
-    return . TodoBodyLine $ T.pack b
-
-getCommentForFileType :: Text -> Text
-getCommentForFileType extension =
-    fromMaybe unkownMarker $ lookup adjustedExtension fileTypeToComment
-    where
-    adjustedExtension =
-        if T.isPrefixOf "." extension
-            then extension
-            else "." <> extension
-
 integer :: Parser Integer
 integer = lexeme $ L.signed space L.decimal
 
@@ -164,43 +149,47 @@ unkownMarker :: Text
 unkownMarker = "UNKNOWN-DELIMETER-UNKNOWN-DELIMETER-UNKNOWN-DELIMETER"
 
 parseTodo :: FilePath -> LineNumber -> Parser TodoEntry
-parseTodo path lineNum = try parseTodoEntryHead
-                     <|> parseComment (getExtension path)
+parseTodo path lineNum = do
+  entryLeadingText <- manyTill anyChar (prefixParserForFileType $ getExtension path)
+  _ <- symbol "TODO"
+  entryDetails <- optional $ try (inParens $ many (noneOf [')', '(']))
+  let parsedDetails = parseDetails . T.pack <$> entryDetails
+      entryPriority = (readMaybe . T.unpack) =<< (snd4 =<< parsedDetails)
+      otherDetails = maybe [] thd4 parsedDetails
+      entryTags = maybe [] fth4 parsedDetails
+  _ <- optional $ symbol "-"
+  _ <- optional $ symbol ":"
+  b <- many anyChar
+  return $
+    TodoEntryHead
+    0
+    [T.pack b]
+    (stringToMaybe . T.strip $ fromMaybe "" (fst4 =<< parsedDetails))
+    path
+    lineNum
+    entryPriority
+    otherDetails
+    entryTags
+    (T.pack entryLeadingText)
 
-    where
-    parseTodoEntryHead :: Parser TodoEntry
-    parseTodoEntryHead = do
-        entryLeadingText <- manyTill anyChar (prefixParserForFileType $ getExtension path)
-        _ <- symbol "TODO"
-        entryDetails <- optional $ try (inParens $ many (noneOf [')', '(']))
-        let parsedDetails = parseDetails . T.pack <$> entryDetails
-            entryPriority = (readMaybe . T.unpack) =<< (snd4 =<< parsedDetails)
-            otherDetails = maybe [] thd4 parsedDetails
-            entryTags = maybe [] fth4 parsedDetails
-        _ <- optional $ symbol "-"
-        _ <- optional $ symbol ":"
-        b <- many anyChar
-        return $
-            TodoEntryHead
-            0
-            [T.pack b]
-            (stringToMaybe . T.strip $ fromMaybe "" (fst4 =<< parsedDetails))
-            path
-            lineNum
-            entryPriority
-            otherDetails
-            entryTags
-            (T.pack entryLeadingText)
+  where
+    inParens :: Parser a -> Parser a
+    inParens = between (symbol "(") (symbol ")")
 
-        where
-        inParens :: Parser a -> Parser a
-        inParens = between (symbol "(") (symbol ")")
-
-        prefixParserForFileType :: Text -> Parser Text
-        -- [Note:org-mode specific parsing]
-        prefixParserForFileType "org" = try (symbol "****")
+    prefixParserForFileType :: Text -> Parser Text
+    -- [Note:org-mode specific parsing]
+    prefixParserForFileType "org" = try (symbol "****")
                                     <|> try (symbol "***")
                                     <|> try (symbol "**")
                                     <|> try (symbol "*")
                                     <|> symbol "-"
-        prefixParserForFileType extension = symbol . getCommentForFileType $ extension
+    prefixParserForFileType extension = symbol . getCommentForFileType $ extension
+
+    getCommentForFileType :: Text -> Text
+    getCommentForFileType extension =
+        fromMaybe unkownMarker $ lookup adjustedExtension fileTypeToComment
+        where
+        adjustedExtension =
+            if T.isPrefixOf "." extension
+                then extension
+                else "." <> extension
