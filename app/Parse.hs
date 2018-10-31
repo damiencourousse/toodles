@@ -87,6 +87,7 @@ fileTypeToComment =
   , (".kts", "//")
   , (".lua", "--")
   , (".m", "//")
+  , (".org", "")    -- see specific parsing below, [Note:org-mode specific parsing]
   , (".php", "//")
   , (".proto", "//")
   , (".py", "#")
@@ -196,6 +197,7 @@ parseTodo path lineNum = try parseTodoEntryHead
         inParens = between (symbol "(") (symbol ")")
 
         prefixParserForFileType :: Text -> Parser Text
+        -- [Note:org-mode specific parsing]
         prefixParserForFileType "org" = try (symbol "****")
                                     <|> try (symbol "***")
                                     <|> try (symbol "**")
